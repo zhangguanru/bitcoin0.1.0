@@ -4,6 +4,7 @@
 
 class CTransaction;
 
+// 交易类型
 enum
 {
     SIGHASH_ALL = 1,

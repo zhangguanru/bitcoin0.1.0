@@ -682,40 +682,51 @@ int64 CBlock::GetBlockValue(int64 nFees) const
     return nSubsidy + nFees;
 }
 
+// 得到挖矿难度 调整挖矿难度值
 unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast)
 {
+    // 每两周调整一次挖矿难度
     const unsigned int nTargetTimespan = 14 * 24 * 60 * 60; // two weeks
+    // 10min一个区块
     const unsigned int nTargetSpacing = 10 * 60;
+    // 2016个区块
     const unsigned int nInterval = nTargetTimespan / nTargetSpacing;
 
     // Genesis block
+    // 创世区块 难度值规定为一个默认值
     if (pindexLast == NULL)
         return bnProofOfWorkLimit.GetCompact();
 
     // Only change once per interval
+    // 判断下一个区块高度是否为2016的整数倍 如果不是 则还是采用上一个区块的难度值
     if ((pindexLast->nHeight+1) % nInterval != 0)
         return pindexLast->nBits;
 
     // Go back by what we want to be 14 days worth of blocks
+    // 往前回退2016个区块
     const CBlockIndex* pindexFirst = pindexLast;
     for (int i = 0; pindexFirst && i < nInterval-1; i++)
         pindexFirst = pindexFirst->pprev;
     assert(pindexFirst);
 
     // Limit adjustment step
+    // 生成最近的2016个区块所用的时间
     unsigned int nActualTimespan = pindexLast->nTime - pindexFirst->nTime;
     printf("  nActualTimespan = %d  before bounds\n", nActualTimespan);
+    // 重新规划接下去2016个区块的时间  在1/4～4倍时间范围内 避免过大或过小
     if (nActualTimespan < nTargetTimespan/4)
         nActualTimespan = nTargetTimespan/4;
     if (nActualTimespan > nTargetTimespan*4)
         nActualTimespan = nTargetTimespan*4;
 
     // Retarget
+    // 新的难度值= 前一个难度值*接下去2016个块的时间/2周
     CBigNum bnNew;
     bnNew.SetCompact(pindexLast->nBits);
     bnNew *= nActualTimespan;
     bnNew /= nTargetTimespan;
 
+    // 如果难度值超纲 则采用系统规定的最大值
     if (bnNew > bnProofOfWorkLimit)
         bnNew = bnProofOfWorkLimit;
 
@@ -769,12 +780,27 @@ bool CTransaction::DisconnectInputs(CTxDB& txdb)
 }
 
 
+/**
+ * 检查交易的输入
+ *
+ * @param txdb
+ * @param mapTestPool
+ * @param posThisTx
+ * @param nHeight 0
+ * @param nFees 区块中所有的交易的手续费
+ * @param fBlock  false
+ * @param fMiner  true 是否为矿工
+ * @param nMinFee  单笔交易的手续费
+ * @return
+ */
 bool CTransaction::ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPool, CDiskTxPos posThisTx, int nHeight, int64& nFees, bool fBlock, bool fMiner, int64 nMinFee)
 {
     // Take over previous transactions' spent pointers
+    // 检查交易输入 coinbase没有交易输入
     if (!IsCoinBase())
     {
-        int64 nValueIn = 0;
+        int64 nValueIn = 0; // 交易的输入总和
+        // 遍历交易输入
         for (int i = 0; i < vin.size(); i++)
         {
             COutPoint prevout = vin[i].prevout;
@@ -782,6 +808,9 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPoo
             // Read txindex
             CTxIndex txindex;
             bool fFound = true;
+
+            // 获取交易输入的交易索引
+            // 如果是矿工 则从mapTestPool获取；否则从库中查询
             if (fMiner && mapTestPool.count(prevout.hash))
             {
                 // Get txindex from current proposed changes
@@ -800,6 +829,7 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPoo
             if (!fFound || txindex.pos == CDiskTxPos(1,1,1))
             {
                 // Get prev tx from single transactions in memory
+                // 从内存中查询交易输入txid对应的交易
                 CRITICAL_BLOCK(cs_mapTransactions)
                 {
                     if (!mapTransactions.count(prevout.hash))
@@ -812,28 +842,34 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPoo
             else
             {
                 // Get prev tx from disk
+                // 从磁盘中查询交易输入txid 对应的交易
                 if (!txPrev.ReadFromDisk(txindex.pos))
                     return error("ConnectInputs() : %s ReadFromDisk prev tx %s failed", GetHash().ToString().substr(0,6).c_str(),  prevout.hash.ToString().substr(0,6).c_str());
             }
 
+            // 检查交易输入 txid + n ，n是否在范围内
             if (prevout.n >= txPrev.vout.size() || prevout.n >= txindex.vSpent.size())
                 return error("ConnectInputs() : %s prevout.n out of range %d %d %d", GetHash().ToString().substr(0,6).c_str(), prevout.n, txPrev.vout.size(), txindex.vSpent.size());
 
             // If prev is coinbase, check that it's matured
+            // 如果prev是coinbase，请检查它是否已成熟 是否已经可花费 coinbase交易要等100个确认后才可再花费 120？
             if (txPrev.IsCoinBase())
                 for (CBlockIndex* pindex = pindexBest; pindex && nBestHeight - pindex->nHeight < COINBASE_MATURITY-1; pindex = pindex->pprev)
                     if (pindex->nBlockPos == txindex.pos.nBlockPos && pindex->nFile == txindex.pos.nFile)
                         return error("ConnectInputs() : tried to spend coinbase at depth %d", nBestHeight - pindex->nHeight);
 
             // Verify signature
+            // 验证交易的签名
             if (!VerifySignature(txPrev, *this, i))
                 return error("ConnectInputs() : %s VerifySignature failed", GetHash().ToString().substr(0,6).c_str());
 
             // Check for conflicts
+            // 检查交易输入是否已经被花费
             if (!txindex.vSpent[prevout.n].IsNull())
                 return fMiner ? false : error("ConnectInputs() : %s prev tx already used at %s", GetHash().ToString().substr(0,6).c_str(), txindex.vSpent[prevout.n].ToString().c_str());
 
             // Mark outpoints as spent
+            // 将交易输入标记为已花费
             txindex.vSpent[prevout.n] = posThisTx;
 
             // Write back
@@ -842,27 +878,34 @@ bool CTransaction::ConnectInputs(CTxDB& txdb, map<uint256, CTxIndex>& mapTestPoo
             else if (fMiner)
                 mapTestPool[prevout.hash] = txindex;
 
+            // 累加交易的输入
             nValueIn += txPrev.vout[prevout.n].nValue;
         }
 
         // Tally transaction fees
+        // 交易手续费 交易输入-交易输出
         int64 nTxFee = nValueIn - GetValueOut();
+        // 交易输出大于交易输入 不合法
         if (nTxFee < 0)
             return error("ConnectInputs() : %s nTxFee < 0", GetHash().ToString().substr(0,6).c_str());
+        // 交易输入 不够
         if (nTxFee < nMinFee)
             return false;
+        // 累加所有的交易手续费
         nFees += nTxFee;
     }
 
     if (fBlock)
     {
         // Add transaction to disk index
+        // 如果是Block，将交易信息写进库中
         if (!txdb.AddTxIndex(*this, posThisTx, nHeight))
             return error("ConnectInputs() : AddTxPos failed");
     }
     else if (fMiner)
     {
         // Add transaction to test pool
+        // 如果是矿工 将交易信息写进mapTestPool
         mapTestPool[GetHash()] = CTxIndex(CDiskTxPos(1,1,1), vout.size());
     }
 
@@ -1150,21 +1193,27 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
 
 
 
-
+// 检查区块
 bool CBlock::CheckBlock() const
 {
     // These are checks that are independent of context
     // that can be verified before saving an orphan block.
+    // 这些检查与上下文无关
+    // 可以在保存孤立块之前进行验证。
 
     // Size limits
+    // 区块大小限制 0x02000000
     if (vtx.empty() || vtx.size() > MAX_SIZE || ::GetSerializeSize(*this, SER_DISK) > MAX_SIZE)
         return error("CheckBlock() : size limits failed");
 
     // Check timestamp
+    // 检查时间戳  区块时间戳太远 超多当前两个小时
     if (nTime > GetAdjustedTime() + 2 * 60 * 60)
         return error("CheckBlock() : block timestamp too far in the future");
 
     // First transaction must be coinbase, the rest must not be
+    // 第一笔交易必须是coinbase，其余的一定不能为coinbase交易
+    // 第一笔交易必须为coinbase交易
     if (vtx.empty() || !vtx[0].IsCoinBase())
         return error("CheckBlock() : first tx is not coinbase");
     for (int i = 1; i < vtx.size(); i++)
@@ -1172,45 +1221,54 @@ bool CBlock::CheckBlock() const
             return error("CheckBlock() : more than one coinbase");
 
     // Check transactions
+    // 遍历交易 检查每笔交易
     foreach(const CTransaction& tx, vtx)
         if (!tx.CheckTransaction())
             return error("CheckBlock() : CheckTransaction failed");
 
     // Check proof of work matches claimed amount
+    // 检查工作量证明是否符合要求
     if (CBigNum().SetCompact(nBits) > bnProofOfWorkLimit)
         return error("CheckBlock() : nBits below minimum work");
     if (GetHash() > CBigNum().SetCompact(nBits).getuint256())
         return error("CheckBlock() : hash doesn't match nBits");
 
     // Check merkleroot
+    // 检查merkleroot 再次重构一遍MerkleTree
     if (hashMerkleRoot != BuildMerkleTree())
         return error("CheckBlock() : hashMerkleRoot mismatch");
 
     return true;
 }
 
+// 接收区块
 bool CBlock::AcceptBlock()
 {
     // Check for duplicate
+    // 检查重复
     uint256 hash = GetHash();
     if (mapBlockIndex.count(hash))
         return error("AcceptBlock() : block already in mapBlockIndex");
 
     // Get prev block index
+    // 得到前一个区块的index
     map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(hashPrevBlock);
     if (mi == mapBlockIndex.end())
         return error("AcceptBlock() : prev block not found");
     CBlockIndex* pindexPrev = (*mi).second;
 
     // Check timestamp against prev
+    // 检查时间戳 当前区块时间戳小于前一个区块的时间戳 不合法
     if (nTime <= pindexPrev->GetMedianTimePast())
         return error("AcceptBlock() : block's timestamp is too early");
 
     // Check proof of work
+    // 根据前一个区块得到当前区块的难度值 进行对比 判断是否一致 检查工作量证明
     if (nBits != GetNextWorkRequired(pindexPrev))
         return error("AcceptBlock() : incorrect proof of work");
 
     // Write block to history file
+    // 将块写入历史文件
     unsigned int nFile;
     unsigned int nBlockPos;
     if (!WriteToDisk(!fClient, nFile, nBlockPos))
@@ -1218,6 +1276,7 @@ bool CBlock::AcceptBlock()
     if (!AddToBlockIndex(nFile, nBlockPos))
         return error("AcceptBlock() : AddToBlockIndex failed");
 
+    // 如果当前区块为最新区块  放入列表以提供给其他节点
     if (hashBestChain == hash)
         RelayInventory(CInv(MSG_BLOCK, hash));
 
@@ -1233,9 +1292,11 @@ bool CBlock::AcceptBlock()
     return true;
 }
 
+// 处理区块
 bool ProcessBlock(CNode* pfrom, CBlock* pblock)
 {
     // Check for duplicate
+    // 检查重复 是否已经处理过
     uint256 hash = pblock->GetHash();
     if (mapBlockIndex.count(hash))
         return error("ProcessBlock() : already have block %d %s", mapBlockIndex[hash]->nHeight, hash.ToString().substr(0,14).c_str());
@@ -1243,6 +1304,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
         return error("ProcessBlock() : already have block (orphan) %s", hash.ToString().substr(0,14).c_str());
 
     // Preliminary checks
+    // 初步检查
     if (!pblock->CheckBlock())
     {
         delete pblock;
@@ -1250,6 +1312,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     }
 
     // If don't already have its previous block, shunt it off to holding area until we get it
+    // 如果还没有之前的方块，请将其分流到等待区域，直到我们得到为止
     if (!mapBlockIndex.count(pblock->hashPrevBlock))
     {
         printf("ProcessBlock: ORPHAN BLOCK, prev=%s\n", pblock->hashPrevBlock.ToString().substr(0,14).c_str());
@@ -1257,12 +1320,14 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
         mapOrphanBlocksByPrev.insert(make_pair(pblock->hashPrevBlock, pblock));
 
         // Ask this guy to fill in what we're missing
+        // 要求这个人填写我们缺少的内容
         if (pfrom)
             pfrom->PushMessage("getblocks", CBlockLocator(pindexBest), GetOrphanRoot(pblock));
         return true;
     }
 
     // Store to disk
+    // 存储到磁盘
     if (!pblock->AcceptBlock())
     {
         delete pblock;
@@ -1271,6 +1336,7 @@ bool ProcessBlock(CNode* pfrom, CBlock* pblock)
     delete pblock;
 
     // Recursively process any orphan blocks that depended on this one
+    // 递归处理任何依赖于此的孤立块
     vector<uint256> vWorkQueue;
     vWorkQueue.push_back(hash);
     for (int i = 0; i < vWorkQueue.size(); i++)
@@ -2133,6 +2199,7 @@ bool SendMessages(CNode* pto)
 //////////////////////////////////////////////////////////////////////////////
 //
 // BitcoinMiner
+// 挖矿 将区块哈希进行格式化
 //
 
 int FormatHashBlocks(void* pbuffer, unsigned int len)
@@ -2153,6 +2220,7 @@ int FormatHashBlocks(void* pbuffer, unsigned int len)
 using CryptoPP::ByteReverse;
 static int detectlittleendian = 1;
 
+// 进行SHA256运算
 void BlockSHA256(const void* pin, unsigned int nBlocks, void* pout)
 {
     unsigned int* pinput = (unsigned int*)pin;
@@ -2180,14 +2248,16 @@ void BlockSHA256(const void* pin, unsigned int nBlocks, void* pout)
 }
 
 
+// todo 挖矿流程
 bool BitcoinMiner()
 {
     printf("BitcoinMiner started\n");
     SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_LOWEST);
 
+    // 生成新的公私钥对 保存coinbase的输出 即收益
     CKey key;
     key.MakeNewKey();
-    CBigNum bnExtraNonce = 0;
+    CBigNum bnExtraNonce = 0; // nonce从0开始
     while (fGenerateBitcoins)
     {
         Sleep(50);
@@ -2200,70 +2270,91 @@ bool BitcoinMiner()
 
         unsigned int nTransactionsUpdatedLast = nTransactionsUpdated;
         CBlockIndex* pindexPrev = pindexBest;
+        // 根据上一个区块得到挖矿难度
         unsigned int nBits = GetNextWorkRequired(pindexPrev);
 
 
         //
         // Create coinbase tx
+        // 构造coinbase交易
         //
         CTransaction txNew;
         txNew.vin.resize(1);
         txNew.vin[0].prevout.SetNull();
         txNew.vin[0].scriptSig << nBits << ++bnExtraNonce;
         txNew.vout.resize(1);
+        // coinbase交易 挖矿+手续费 打到哪个地址
         txNew.vout[0].scriptPubKey << key.GetPubKey() << OP_CHECKSIG;
 
 
         //
         // Create new block
+        // 创建一个新的区块
         //
         auto_ptr<CBlock> pblock(new CBlock());
         if (!pblock.get())
             return false;
 
         // Add our coinbase tx as first transaction
+        // 将coinbase交易作为第一个交易放到集合中去
         pblock->vtx.push_back(txNew);
 
         // Collect the latest transactions into the block
-        int64 nFees = 0;
+        //收集最新的交易 放入区块
+        int64 nFees = 0; // 统计打包一个区块 区块里面包含的交易手续费
         CRITICAL_BLOCK(cs_main)
         CRITICAL_BLOCK(cs_mapTransactions)
         {
             CTxDB txdb("r");
             map<uint256, CTxIndex> mapTestPool;
+            // 创建和内存池中交易的数量大小相同的集合 保存交易
             vector<char> vfAlreadyAdded(mapTransactions.size());
             bool fFoundSomething = true;
-            unsigned int nBlockSize = 0;
+            unsigned int nBlockSize = 0;  // 区块大小
+            // nBlockSize < MAX_SIZE/2 规定一个区块里面包含的总交易的大小 0x02000000/2
+            // 外层循环是因为是多线程，可能刚开始对应的交易没有怎么多，则在等待交易，进行打包，只等待一轮，如果mapTransactions有很多交易则一起打包
             while (fFoundSomething && nBlockSize < MAX_SIZE/2)
             {
                 fFoundSomething = false;
                 unsigned int n = 0;
+                // 遍历内存池中的每笔交易
                 for (map<uint256, CTransaction>::iterator mi = mapTransactions.begin(); mi != mapTransactions.end(); ++mi, ++n)
                 {
+                    // 防止相同的交易放入两遍
                     if (vfAlreadyAdded[n])
                         continue;
                     CTransaction& tx = (*mi).second;
+                    // 过滤coinbase交易
                     if (tx.IsCoinBase() || !tx.IsFinal())
                         continue;
 
                     // Transaction fee requirements, mainly only needed for flood control
                     // Under 10K (about 80 inputs) is free for first 100 transactions
                     // Base rate is 0.01 per KB
+                    // 交易的手续费  前100个交易，交易的大小下于10K，则可以免手续费；
+                    // 100个交易过后，剩下的交易差不多 0.01btc/KB
                     int64 nMinFee = tx.GetMinFee(pblock->vtx.size() < 100);
 
+                    // 临时创建一个map
                     map<uint256, CTxIndex> mapTestPoolTmp(mapTestPool);
+                    // 判断当前交易的输入是否合法，对应的nFees在ConnectInputs是进行累加的
                     if (!tx.ConnectInputs(txdb, mapTestPoolTmp, CDiskTxPos(1,1,1), 0, nFees, false, true, nMinFee))
                         continue;
+                    // 将处理过后的交易 保存到mapTestPool
                     swap(mapTestPool, mapTestPoolTmp);
 
+                    // 保存交易
                     pblock->vtx.push_back(tx);
+                    // 累加每笔交易的大小
                     nBlockSize += ::GetSerializeSize(tx, SER_NETWORK);
                     vfAlreadyAdded[n] = true;
                     fFoundSomething = true;
                 }
             }
         }
+        // 设置区块的难度值
         pblock->nBits = nBits;
+        // coinbase的收益 挖矿奖励+交易手续费
         pblock->vtx[0].vout[0].nValue = pblock->GetBlockValue(nFees);
         printf("\n\nRunning BitcoinMiner with %d transactions in block\n", pblock->vtx.size());
 
@@ -2291,7 +2382,9 @@ bool BitcoinMiner()
 
         tmp.block.nVersion       = pblock->nVersion;
         tmp.block.hashPrevBlock  = pblock->hashPrevBlock  = (pindexPrev ? pindexPrev->GetBlockHash() : 0);
+        // 构建Merkle Tree ，返回MerkleRoot
         tmp.block.hashMerkleRoot = pblock->hashMerkleRoot = pblock->BuildMerkleTree();
+        // 区块时间
         tmp.block.nTime          = pblock->nTime          = max((pindexPrev ? pindexPrev->GetMedianTimePast()+1 : 0), GetAdjustedTime());
         tmp.block.nBits          = pblock->nBits          = nBits;
         tmp.block.nNonce         = pblock->nNonce         = 1;
@@ -2304,14 +2397,16 @@ bool BitcoinMiner()
         // Search
         //
         unsigned int nStart = GetTime();
+        // 目标难度
         uint256 hashTarget = CBigNum().SetCompact(pblock->nBits).getuint256();
         uint256 hash;
         loop
         {
+            // 进行哈希运算
             BlockSHA256(&tmp.block, nBlocks0, &tmp.hash1);
             BlockSHA256(&tmp.hash1, nBlocks1, &hash);
 
-
+            // 挖出新的区块； 区块哈希小于目标难度哈希
             if (hash <= hashTarget)
             {
                 pblock->nNonce = tmp.block.nNonce;
@@ -2326,11 +2421,14 @@ bool BitcoinMiner()
                 CRITICAL_BLOCK(cs_main)
                 {
                     // Save key
+                    // 挖出新块 保存coinbase的输出的地址信息
                     if (!AddKey(key))
                         return false;
                     key.MakeNewKey();
 
                     // Process this block the same as if we had received it from another node
+                    // 处理此块，就像我们从另一个节点收到它一样
+                    // 对挖出的块 进行检查合法性
                     if (!ProcessBlock(NULL, pblock.release()))
                         printf("ERROR in BitcoinMiner, ProcessBlock, block not accepted\n");
                 }
@@ -2341,6 +2439,7 @@ bool BitcoinMiner()
             }
 
             // Update nTime every few seconds
+            // 每几秒钟更新一次nTime
             if ((++tmp.block.nNonce & 0x3ffff) == 0)
             {
                 CheckForShutdown(3);

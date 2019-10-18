@@ -130,6 +130,7 @@ public:
         return true;
     }
 
+    // 验证签名
     bool Verify(uint256 hash, const vector<unsigned char>& vchSig)
     {
         // -1 = error, 0 = bad sig, 1 = good
@@ -146,6 +147,7 @@ public:
         return key.Sign(hash, vchSig);
     }
 
+    // 验证签名
     static bool Verify(const vector<unsigned char>& vchPubKey, uint256 hash, const vector<unsigned char>& vchSig)
     {
         CKey key;

@@ -15,7 +15,7 @@ class CWalletTx;
 class CKeyItem;
 
 static const unsigned int MAX_SIZE = 0x02000000;
-static const int64 COIN = 100000000;
+static const int64 COIN = 100000000; // 精度 8位 1btc=10^8聪
 static const int64 CENT = 1000000;
 static const int COINBASE_MATURITY = 100;
 
@@ -501,6 +501,7 @@ public:
         return nValueOut;
     }
 
+    // 交易的手续费
     int64 GetMinFee(bool fDiscount=false) const
     {
         unsigned int nBytes = ::GetSerializeSize(*this, SER_NETWORK);
@@ -816,7 +817,8 @@ public:
     // network and disk
     vector<CTransaction> vtx;
 
-    // memory only
+    // memory only   仅记忆
+    // 不仅保存子节点的哈希，中间节点和root节点的哈希也一并保存
     mutable vector<uint256> vMerkleTree;
 
 
@@ -865,6 +867,7 @@ public:
     }
 
 
+    // 构建Merkle Tree ，返回MerkleRoot
     uint256 BuildMerkleTree() const
     {
         vMerkleTree.clear();
@@ -876,11 +879,13 @@ public:
             for (int i = 0; i < nSize; i += 2)
             {
                 int i2 = min(i+1, nSize-1);
+                // 两个子节点进行哈希运算，得到父节点哈希
                 vMerkleTree.push_back(Hash(BEGIN(vMerkleTree[j+i]),  END(vMerkleTree[j+i]),
                                            BEGIN(vMerkleTree[j+i2]), END(vMerkleTree[j+i2])));
             }
             j += nSize;
         }
+        // 返回 MerkleRoot
         return (vMerkleTree.empty() ? 0 : vMerkleTree.back());
     }
 
@@ -1083,6 +1088,7 @@ public:
 
     enum { nMedianTimeSpan=11 };
 
+    // 获取过去的中位数时间
     int64 GetMedianTimePast() const
     {
         unsigned int pmedian[nMedianTimeSpan];

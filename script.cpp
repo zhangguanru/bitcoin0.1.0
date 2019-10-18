@@ -41,6 +41,15 @@ void MakeSameSize(valtype& vch1, valtype& vch2)
 #define stacktop(i)  (stack.at(stack.size()+(i)))
 #define altstacktop(i)  (altstack.at(altstack.size()+(i)))
 
+/**
+ * 根据脚本验证交易的合法性
+ * @param script  解锁脚本+锁定脚本
+ * @param txTo    哪笔交易花费
+ * @param nIn     花费的交易哪一个输出
+ * @param nHashType 交易类型
+ * @param pvStackRet
+ * @return
+ */
 bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nIn, int nHashType,
                 vector<vector<unsigned char> >* pvStackRet)
 {
@@ -55,6 +64,7 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
         pvStackRet->clear();
 
 
+    // 遍历解锁脚本+锁定脚本组成的操作码集合
     while (pc < pend)
     {
         bool fExec = !count(vfExec.begin(), vfExec.end(), false);
@@ -68,6 +78,7 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
             return false;
 
         if (fExec && opcode <= OP_PUSHDATA4)
+            // 非操作码入栈 如签名信息、公钥
             stack.push_back(vchPushValue);
         else if (fExec || (OP_IF <= opcode && opcode <= OP_ENDIF))
         switch (opcode)
@@ -292,6 +303,7 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
             }
             break;
 
+            // 复制栈顶元素
             case OP_DUP:
             {
                 // (x -- x x)
@@ -351,6 +363,7 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
             }
             break;
 
+            // 交换栈顶的两个元素
             case OP_SWAP:
             {
                 // (x1 x2 -- x2 x1)
@@ -481,6 +494,7 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
             }
             break;
 
+            // 判断栈顶两个元素是否相等
             case OP_EQUAL:
             case OP_EQUALVERIFY:
             //case OP_NOTEQUAL: // use OP_NUMNOTEQUAL
@@ -649,6 +663,7 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
 
             //
             // Crypto
+            // 脚本中的加码函数
             //
             case OP_RIPEMD160:
             case OP_SHA1:
@@ -689,6 +704,7 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
             }
             break;
 
+            // 用公钥验证签名
             case OP_CHECKSIG:
             case OP_CHECKSIGVERIFY:
             {
@@ -696,8 +712,8 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
                 if (stack.size() < 2)
                     return false;
 
-                valtype& vchSig    = stacktop(-2);
-                valtype& vchPubKey = stacktop(-1);
+                valtype& vchSig    = stacktop(-2); // 签名
+                valtype& vchPubKey = stacktop(-1); // 公钥
 
                 ////// debug print
                 //PrintHex(vchSig.begin(), vchSig.end(), "sig: %s\n");
@@ -709,10 +725,12 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
                 // Drop the signature, since there's no way for a signature to sign itself
                 scriptCode.FindAndDelete(CScript(vchSig));
 
+                // 调用签名函数 用公钥验证签名信息
                 bool fSuccess = CheckSig(vchSig, vchPubKey, scriptCode, txTo, nIn, nHashType);
 
                 stack.pop_back();
                 stack.pop_back();
+                // 公钥能否验证签名 将结果入栈
                 stack.push_back(fSuccess ? vchTrue : vchFalse);
                 if (opcode == OP_CHECKSIGVERIFY)
                 {
@@ -724,6 +742,7 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
             }
             break;
 
+            // 多重签名
             case OP_CHECKMULTISIG:
             case OP_CHECKMULTISIGVERIFY:
             {
@@ -814,9 +833,17 @@ bool EvalScript(const CScript& script, const CTransaction& txTo, unsigned int nI
 
 
 
-
+/**
+ *
+ * @param scriptCode
+ * @param txTo
+ * @param nIn
+ * @param nHashType
+ * @return
+ */
 uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo, unsigned int nIn, int nHashType)
 {
+    // nIn 为第几个交易输入 不能大于总的交易个数
     if (nIn >= txTo.vin.size())
     {
         printf("ERROR: SignatureHash() : nIn=%d out of range\n", nIn);
@@ -826,20 +853,26 @@ uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo, unsigned int
 
     // In case concatenating two scripts ends up with two codeseparators,
     // or an extra one at the end, this prevents all those possible incompatibilities.
+    // 如果连接两个脚本以两个代码分隔符结束，
+    // 或最后加一个，这样可以防止所有可能的不兼容。
     scriptCode.FindAndDelete(CScript(OP_CODESEPARATOR));
 
     // Blank out other inputs' signatures
+    // 清空其他输入的签名
     for (int i = 0; i < txTmp.vin.size(); i++)
         txTmp.vin[i].scriptSig = CScript();
     txTmp.vin[nIn].scriptSig = scriptCode;
 
     // Blank out some of the outputs
+    // 清空一些输出
     if ((nHashType & 0x1f) == SIGHASH_NONE)
     {
         // Wildcard payee
+        // 通配符收款人 任何人都可以花费这笔交易
         txTmp.vout.clear();
 
         // Let the others update at will
+        // 让其他随意更新
         for (int i = 0; i < txTmp.vin.size(); i++)
             if (i != nIn)
                 txTmp.vin[i].nSequence = 0;
@@ -847,6 +880,7 @@ uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo, unsigned int
     else if ((nHashType & 0x1f) == SIGHASH_SINGLE)
     {
         // Only lockin the txout payee at same index as txin
+        // 仅将txout收款人锁定在与txin相同的索引处
         unsigned int nOut = nIn;
         if (nOut >= txTmp.vout.size())
         {
@@ -858,12 +892,14 @@ uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo, unsigned int
             txTmp.vout[i].SetNull();
 
         // Let the others update at will
+        //  让其他随意更新
         for (int i = 0; i < txTmp.vin.size(); i++)
             if (i != nIn)
                 txTmp.vin[i].nSequence = 0;
     }
 
     // Blank out other inputs completely, not recommended for open transactions
+    // 完全清空其他输入，不建议用于开放的交易
     if (nHashType & SIGHASH_ANYONECANPAY)
     {
         txTmp.vin[0] = txTmp.vin[nIn];
@@ -877,22 +913,34 @@ uint256 SignatureHash(CScript scriptCode, const CTransaction& txTo, unsigned int
     return Hash(ss.begin(), ss.end());
 }
 
-
+/**
+ * 用公钥验证签名是否正确
+ *
+ * @param vchSig    签名信息
+ * @param vchPubKey   公钥
+ * @param scriptCode
+ * @param txTo
+ * @param nIn
+ * @param nHashType 交易类型
+ * @return
+ */
 bool CheckSig(vector<unsigned char> vchSig, vector<unsigned char> vchPubKey, CScript scriptCode,
               const CTransaction& txTo, unsigned int nIn, int nHashType)
 {
+    // 公钥是否合法
     CKey key;
     if (!key.SetPubKey(vchPubKey))
         return false;
 
     // Hash type is one byte tacked on to the end of the signature
+    // 交易类型 是附属在签名后面 eg. 签名后的串[ALL]公钥
     if (vchSig.empty())
         return false;
     if (nHashType == 0)
-        nHashType = vchSig.back();
+        nHashType = vchSig.back();  // ALL
     else if (nHashType != vchSig.back())
         return false;
-    vchSig.pop_back();
+    vchSig.pop_back(); // 将ALL 从栈弹出
 
     if (key.Verify(SignatureHash(scriptCode, txTo, nIn, nHashType), vchSig))
         return true;
@@ -1111,17 +1159,31 @@ bool SignSignature(const CTransaction& txFrom, CTransaction& txTo, unsigned int 
     return true;
 }
 
-
+/**
+ * 验证签名是否正确
+ *
+ * @param txFrom  花费的哪笔交易
+ * @param txTo    在哪笔交易中被花费
+ * @param nIn     交易的第几个输出被花费
+ * @param nHashType 交易类型
+ * @return
+ */
 bool VerifySignature(const CTransaction& txFrom, const CTransaction& txTo, unsigned int nIn, int nHashType)
 {
+    // 检查nIn是否合法
     assert(nIn < txTo.vin.size());
+    // 交易的第几个输入
     const CTxIn& txin = txTo.vin[nIn];
+    // 交易输入txid对应的n如果大于txid的输出数 非法
     if (txin.prevout.n >= txFrom.vout.size())
         return false;
+    // 第几个交易输出
     const CTxOut& txout = txFrom.vout[txin.prevout.n];
 
+    // 判断交易输入 是否花费的对应的交易
     if (txin.prevout.hash != txFrom.GetHash())
         return false;
 
+    // 用脚本验证交易是否合法 解锁脚本+锁定脚本
     return EvalScript(txin.scriptSig + CScript(OP_CODESEPARATOR) + txout.scriptPubKey, txTo, nIn, nHashType);
 }

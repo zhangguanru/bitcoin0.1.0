@@ -766,6 +766,7 @@ public:
 inline void RelayInventory(const CInv& inv)
 {
     // Put on lists to offer to the other nodes
+    // 放入列表以提供给其他节点
     CRITICAL_BLOCK(cs_vNodes)
         foreach(CNode* pnode, vNodes)
             pnode->PushInventory(inv);
