@@ -802,6 +802,10 @@ public:
 //
 // Blocks are appended to blk0001.dat files on disk.  Their location on disk
 // is indexed by CBlockIndex objects in memory.
+// 节点将新事务收集到一个块中，将它们哈希到一个哈希树中，并扫描随机数值以使该块的哈希满足工作量证明的要求。
+// 当他们解决工作量证明时，他们将区块广播给所有人，并将区块添加到区块链中。
+// 区块中的第一笔交易是一种特殊交易，它创建了区块创建者拥有的新硬币。
+// 将块附加到磁盘上的blk0001.dat文件。 它们在磁盘上的位置由内存中的CBlockIndex对象索引。
 //
 class CBlock
 {
@@ -815,6 +819,7 @@ public:
     unsigned int nNonce;
 
     // network and disk
+    // 交易集合
     vector<CTransaction> vtx;
 
     // memory only   仅记忆
@@ -921,9 +926,11 @@ public:
     }
 
 
+    // 将区块信息写进磁盘
     bool WriteToDisk(bool fWriteTransactions, unsigned int& nFileRet, unsigned int& nBlockPosRet)
     {
         // Open history file to append
+        // 打开已经存在的文件 将区块信息追加到文件后面
         CAutoFile fileout = AppendBlockFile(nFileRet);
         if (!fileout)
             return error("CBlock::WriteToDisk() : AppendBlockFile failed");
@@ -931,6 +938,7 @@ public:
             fileout.nType |= SER_BLOCKHEADERONLY;
 
         // Write index header
+        // 写索引头
         unsigned int nSize = fileout.GetSerializeSize(*this);
         fileout << FLATDATA(pchMessageStart) << nSize;
 
@@ -1010,6 +1018,9 @@ public:
 // main/longest chain.  A blockindex may have multiple pprev pointing back
 // to it, but pnext will only point forward to the longest branch, or will
 // be null if the block is not part of the longest chain.
+// 区块链是一种树状结构，从根部的创世块开始，每个区块都可能有多个候选对象成为下一个区块。
+// pprev和pnext通过主/最长链链接一条路径。
+// 一个blockindex可能有多个指向它的pprev，但是pnext只会指向最长的分支，或者如果该块不是最长链的一部分则为null。
 //
 class CBlockIndex
 {

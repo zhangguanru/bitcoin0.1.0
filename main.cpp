@@ -672,11 +672,13 @@ uint256 GetOrphanRoot(const CBlock* pblock)
     return pblock->GetHash();
 }
 
+// coinbase交易的收益 挖矿奖励+手续费
 int64 CBlock::GetBlockValue(int64 nFees) const
 {
     int64 nSubsidy = 50 * COIN;
 
     // Subsidy is cut in half every 4 years
+    // 挖矿奖励 每4年减半
     nSubsidy >>= (nBestHeight / 210000);
 
     return nSubsidy + nFees;
@@ -1473,6 +1475,7 @@ FILE* AppendBlockFile(unsigned int& nFileRet)
         if (fseek(file, 0, SEEK_END) != 0)
             return NULL;
         // FAT32 filesize max 4GB, fseek and ftell max 2GB, so we must stay under 2GB
+        // FAT32文件大小最大为4GB，fseek和ftell最大为2GB，因此我们必须保持在2GB以下
         if (ftell(file) < 0x7F000000 - MAX_SIZE)
         {
             nFileRet = nCurrentBlockFile;
@@ -2270,7 +2273,7 @@ bool BitcoinMiner()
 
         unsigned int nTransactionsUpdatedLast = nTransactionsUpdated;
         CBlockIndex* pindexPrev = pindexBest;
-        // 根据上一个区块得到挖矿难度
+        // 根据上一个区块得到挖矿难度    后面处理区块的时候，会再次计算验证
         unsigned int nBits = GetNextWorkRequired(pindexPrev);
 
 
