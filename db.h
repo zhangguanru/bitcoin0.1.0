@@ -147,6 +147,7 @@ protected:
         return pcursor;
     }
 
+    // 读取游标
     int ReadAtCursor(Dbc* pcursor, CDataStream& ssKey, CDataStream& ssValue, unsigned int fFlags=DB_NEXT)
     {
         // Read at cursor
@@ -179,6 +180,7 @@ protected:
         ssValue.write((char*)datValue.get_data(), datValue.get_size());
 
         // Clear and free memory
+        // 清除和释放内存
         memset(datKey.get_data(), 0, datKey.get_size());
         memset(datValue.get_data(), 0, datValue.get_size());
         free(datKey.get_data());

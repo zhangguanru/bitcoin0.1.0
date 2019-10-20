@@ -1080,6 +1080,7 @@ bool IsMine(const CScript& scriptPubKey)
 }
 
 
+// 提取PubKey
 bool ExtractPubKey(const CScript& scriptPubKey, bool fMineOnly, vector<unsigned char>& vchPubKeyRet)
 {
     vchPubKeyRet.clear();

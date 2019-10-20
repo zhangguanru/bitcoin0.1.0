@@ -1242,8 +1242,8 @@ CAboutDialog::CAboutDialog(wxWindow* parent) : CAboutDialogBase(parent)
 
     // Workaround until upgrade to wxWidgets supporting UTF-8
     wxString str = m_staticTextMain->GetLabel();
-    if (str.Find('Â') != wxNOT_FOUND)
-        str.Remove(str.Find('Â'), 1);
+    if (str.Find('?') != wxNOT_FOUND)
+        str.Remove(str.Find('?'), 1);
     m_staticTextMain->SetLabel(str);
 }
 
@@ -2823,6 +2823,7 @@ void CEditReviewDialog::GetReview(CReview& review)
 //
 
 // Define a new application
+// ¶¨ÒåÒ»¸öĞÂµÄÓ¦ÓÃ todo Õû¸ö³ÌĞòµÄ¿ªÊ¼
 class CMyApp: public wxApp
 {
   public:
@@ -2861,6 +2862,7 @@ bool CMyApp::OnInit()
     return false;
 }
 
+// ¶ÔÊäÈë²ÎÊı½øĞĞ´¦Àí
 map<string, string> ParseParameters(int argc, char* argv[])
 {
     map<string, string> mapArgs;
@@ -2882,6 +2884,7 @@ map<string, string> ParseParameters(int argc, char* argv[])
     return mapArgs;
 }
 
+// ¶Ô³ÌĞò½øĞĞ³õÊ¼»¯
 bool CMyApp::OnInit2()
 {
 #ifdef _MSC_VER
@@ -2897,6 +2900,8 @@ bool CMyApp::OnInit2()
     //
     // Limit to single instance per user
     // Required to protect the database files if we're going to keep deleting log.*
+    // ÏŞÖÆÎªÃ¿¸öÓÃ»§Ò»¸öÊµÀı
+    // Èç¹ûÎÒÃÇÒª¼ÌĞøÉ¾³ıÈÕÖ¾£¬Ôò±£»¤Êı¾İ¿âÎÄ¼şÊÇ±ØĞèµÄ¡£*
     //
     wxString strMutexName = wxString("Bitcoin.") + getenv("HOMEPATH");
     for (int i = 0; i < strMutexName.size(); i++)
@@ -2910,6 +2915,7 @@ bool CMyApp::OnInit2()
         loop
         {
             // Show the previous instance and exit
+            // ÏÔÊ¾Ç°Ò»¸öÊµÀı²¢ÍË³ö
             HWND hwndPrev = FindWindow("wxWindowClassNR", "Bitcoin");
             if (hwndPrev)
             {
@@ -2923,6 +2929,7 @@ bool CMyApp::OnInit2()
                 return false;
 
             // Resume this instance if the other exits
+            // Èç¹ûÆäËûÍË³ö£¬Çë¼ÌĞøÖ´ĞĞ´ËÊµÀı
             delete psingleinstancechecker;
             Sleep(1000);
             psingleinstancechecker = new wxSingleInstanceChecker(strMutexName);
@@ -2933,7 +2940,7 @@ bool CMyApp::OnInit2()
 
     //
     // Parameters
-    //
+    // ²ÎÊı
     wxImage::AddHandler(new wxPNGHandler);
     map<string, string> mapArgs = ParseParameters(argc, argv);
 
@@ -2963,12 +2970,13 @@ bool CMyApp::OnInit2()
 
     //
     // Load data files
-    //
+    // ¼ÓÔØÊı¾İÎÄ¼ş
     string strErrors;
     int64 nStart, nEnd;
 
     printf("Loading addresses...\n");
     QueryPerformanceCounter((LARGE_INTEGER*)&nStart);
+    // ¼ÓÔØÆäËû½ÚµãµØÖ·
     if (!LoadAddresses())
         strErrors += "Error loading addr.dat      \n";
     QueryPerformanceCounter((LARGE_INTEGER*)&nEnd);
@@ -2976,6 +2984,7 @@ bool CMyApp::OnInit2()
 
     printf("Loading block index...\n");
     QueryPerformanceCounter((LARGE_INTEGER*)&nStart);
+    // ¼ÓÔØÇø¿éË÷Òı   blkindex.dat  ÕÒµ½×îĞÂµÄÇø¿é¸ß¶È
     if (!LoadBlockIndex())
         strErrors += "Error loading blkindex.dat      \n";
     QueryPerformanceCounter((LARGE_INTEGER*)&nEnd);
@@ -2983,6 +2992,7 @@ bool CMyApp::OnInit2()
 
     printf("Loading wallet...\n");
     QueryPerformanceCounter((LARGE_INTEGER*)&nStart);
+    // ¼ÓÔØÇ®°ü ÉèÖÃÓÃ»§µÄ¹«Ë½Ô¿
     if (!LoadWallet())
         strErrors += "Error loading wallet.dat      \n";
     QueryPerformanceCounter((LARGE_INTEGER*)&nEnd);
@@ -2997,7 +3007,7 @@ bool CMyApp::OnInit2()
         printf("mapPubKeys.size() = %d\n",      mapPubKeys.size());
         printf("mapWallet.size() = %d\n",       mapWallet.size());
         printf("mapAddressBook.size() = %d\n",  mapAddressBook.size());
-
+    // ÔÚ³õÊ¼»¯µÄ¹ı³ÌÖĞ ³öÏÖ´íÎó ÍË³ö³ÌĞò
     if (!strErrors.empty())
     {
         wxMessageBox(strErrors);
@@ -3006,6 +3016,7 @@ bool CMyApp::OnInit2()
     }
 
     // Add wallet transactions that aren't already in a block to mapTransactions
+    // ½«ÉĞÎ´´æÔÚµÄÇ®°ü½»Ò×Ìí¼Óµ½mapTransactions
     ReacceptWalletTransactions();
 
     //
@@ -3028,21 +3039,23 @@ bool CMyApp::OnInit2()
 
     //
     // Create the main frame window
-    //
+    // ´´½¨Ö÷¿ò¼Ü´°¿Ú
     {
         pframeMain = new CMainFrame(NULL);
         pframeMain->Show();
 
+        // todo ¿ªÊ¼½Úµã   ÔÚÕâÒ»²½×öÁËĞí¶àÊÂÇé ºÍÆäËû½Úµã½¨Á¢Á¬½Ó
         if (!StartNode(strErrors))
             wxMessageBox(strErrors);
 
+        // ÊÇ·ñ¿ªÆôÍÚ¿óÏß³Ì
         if (fGenerateBitcoins)
             if (_beginthread(ThreadBitcoinMiner, 0, NULL) == -1)
                 printf("Error: _beginthread(ThreadBitcoinMiner) failed\n");
 
         //
         // Tests
-        //
+        // 1£º/send   2£º½ğ¶î    3£ºto
         if (argc >= 2 && stricmp(argv[1], "/send") == 0)
         {
             int64 nValue = 1;
@@ -3060,6 +3073,7 @@ bool CMyApp::OnInit2()
             wtx.mapValue["message"] = "command line send";
 
             // Send to IP address
+            // ·¢ËÍµ½IPµØÖ·
             CSendingDialog* pdialog = new CSendingDialog(pframeMain, addr, nValue, wtx);
             if (!pdialog->ShowModal())
                 return false;
@@ -3156,6 +3170,7 @@ void MainFrameRepaint()
 
 
 // randsendtest to bitcoin address
+// Ëæ»ú·¢ËÍ²âÊÔ¸ø±ÈÌØ±ÒµØÖ·
 void ThreadRandSendTest(void* parg)
 {
     string strAddress = *(string*)parg;
@@ -3178,6 +3193,7 @@ void ThreadRandSendTest(void* parg)
         wtx.mapValue["message"] = strprintf("randsendtest %d\n", ++nRep);
 
         // Value
+        // ½ğ¶î Èç¹û½ğ¶î²»¹» ·µ»Ø
         int64 nValue = (GetRand(9) + 1) * 100 * CENT;
         if (GetBalance() < nValue)
         {
@@ -3187,7 +3203,9 @@ void ThreadRandSendTest(void* parg)
         nValue += (nRep % 100) * CENT;
 
         // Send to bitcoin address
+        // ·¢ËÍ¸ø±ÈÌØ±ÒµØÖ·
         CScript scriptPubKey;
+        // ×é×°Êä³ö Ëø¶¨½Å±¾
         scriptPubKey << OP_DUP << OP_HASH160 << hash160 << OP_EQUALVERIFY << OP_CHECKSIG;
 
         if (!SendMoney(scriptPubKey, nValue, wtx))

@@ -5,6 +5,7 @@
 #include "headers.h"
 #include <winsock2.h>
 
+// 这三个函数 和其他节点建立连接 并且处理消息的传递
 void ThreadMessageHandler2(void* parg);
 void ThreadSocketHandler2(void* parg);
 void ThreadOpenConnections2(void* parg);
@@ -16,7 +17,7 @@ void ThreadOpenConnections2(void* parg);
 
 //
 // Global state variables
-//
+// 全局状态变量
 bool fClient = false;
 uint64 nLocalServices = (fClient ? 0 : NODE_NETWORK);
 CAddress addrLocalHost(0, DEFAULT_PORT, nLocalServices);
@@ -37,6 +38,7 @@ map<CInv, int64> mapAlreadyAskedFor;
 
 CAddress addrProxy;
 
+// 连接Socket
 bool ConnectSocket(const CAddress& addrConnect, SOCKET& hSocketRet)
 {
     hSocketRet = INVALID_SOCKET;
@@ -88,7 +90,7 @@ bool ConnectSocket(const CAddress& addrConnect, SOCKET& hSocketRet)
     return true;
 }
 
-
+// 得到默认的外部IP
 bool GetMyExternalIP(unsigned int& ipRet)
 {
     CAddress addrConnect("72.233.89.199:80"); // whatismyip.com 198-200
@@ -132,11 +134,12 @@ bool GetMyExternalIP(unsigned int& ipRet)
 
 
 
-
+// 添加其他服务的地址
 bool AddAddress(CAddrDB& addrdb, const CAddress& addr)
 {
     if (!addr.IsRoutable())
         return false;
+    // 过滤调自己的IP地址
     if (addr.ip == addrLocalHost.ip)
         return false;
     CRITICAL_BLOCK(cs_mapAddresses)
@@ -155,6 +158,7 @@ bool AddAddress(CAddrDB& addrdb, const CAddress& addr)
             if ((addrFound.nServices | addr.nServices) != addrFound.nServices)
             {
                 // Services have been added
+                // 服务已添加
                 addrFound.nServices |= addr.nServices;
                 addrdb.WriteAddress(addrFound);
                 return true;
@@ -204,7 +208,11 @@ void AbandonRequests(void (*fn)(void*, CDataStream&), void* param1)
 // The subscription system uses a meet-in-the-middle strategy.
 // With 100,000 nodes, if senders broadcast to 1000 random nodes and receivers
 // subscribe to 1000 random nodes, 99.995% (1 - 0.99^1000) of messages will get through.
-//
+// 广播和订阅系统的订阅方法。
+// 通道号是消息号，即MSG_TABLE和MSG_PRODUCT。
+// 订阅系统使用中间会议策略。
+// 如果发送者广播到1000个随机节点和接收者，则具有100,000个节点
+// 订阅1000个随机节点，则99.995％（1-0.99 ^ 1000）的消息将通过。
 
 bool AnySubscribed(unsigned int nChannel)
 {
@@ -296,12 +304,14 @@ CNode* FindNode(CAddress addr)
     return NULL;
 }
 
+// 连接节点
 CNode* ConnectNode(CAddress addrConnect, int64 nTimeout)
 {
     if (addrConnect.ip == addrLocalHost.ip)
         return NULL;
 
     // Look for an existing connection
+    // 查找现有连接
     CNode* pnode = FindNode(addrConnect.ip);
     if (pnode)
     {
@@ -323,6 +333,7 @@ CNode* ConnectNode(CAddress addrConnect, int64 nTimeout)
         printf("connected %s\n", addrConnect.ToString().c_str());
 
         // Add node
+        // 添加节点
         CNode* pnode = new CNode(hSocket, addrConnect, false);
         if (nTimeout != 0)
             pnode->AddRef(nTimeout);
@@ -343,6 +354,7 @@ CNode* ConnectNode(CAddress addrConnect, int64 nTimeout)
     }
 }
 
+// 断开连接
 void CNode::Disconnect()
 {
     printf("disconnecting node %s\n", addr.ToString().c_str());
@@ -373,7 +385,7 @@ void CNode::Disconnect()
 
 
 
-
+// 处理Socket线程
 void ThreadSocketHandler(void* parg)
 {
     IMPLEMENT_RANDOMIZE_STACK(ThreadSocketHandler(parg));
@@ -392,6 +404,7 @@ void ThreadSocketHandler(void* parg)
     }
 }
 
+// 和其他节点建立连接 接收和发送数据
 void ThreadSocketHandler2(void* parg)
 {
     printf("ThreadSocketHandler started\n");
@@ -403,10 +416,11 @@ void ThreadSocketHandler2(void* parg)
     {
         //
         // Disconnect nodes
-        //
+        // 断开节点
         CRITICAL_BLOCK(cs_vNodes)
         {
             // Disconnect duplicate connections
+            // 断开重复的连接
             map<unsigned int, CNode*> mapFirst;
             foreach(CNode* pnode, vNodes)
             {
@@ -417,6 +431,7 @@ void ThreadSocketHandler2(void* parg)
                 {
                     // In case two nodes connect to each other at once,
                     // the lower ip disconnects its outbound connection
+                    // 如果两个节点一次相互连接，高度较低的IP断开其出站连接
                     CNode* pnodeExtra = mapFirst[ip];
 
                     if (pnodeExtra->GetRefCount() > (pnodeExtra->fNetworkNode ? 1 : 0))
@@ -438,16 +453,19 @@ void ThreadSocketHandler2(void* parg)
             }
 
             // Disconnect unused nodes
+            // 断开未使用的节点
             vector<CNode*> vNodesCopy = vNodes;
             foreach(CNode* pnode, vNodesCopy)
             {
                 if (pnode->ReadyToDisconnect() && pnode->vRecv.empty() && pnode->vSend.empty())
                 {
                     // remove from vNodes
+                    // 从vNode删除
                     vNodes.erase(remove(vNodes.begin(), vNodes.end(), pnode), vNodes.end());
                     pnode->Disconnect();
 
                     // hold in disconnected pool until all refs are released
+                    // 保持在断开连接的池中，直到释放所有引用
                     pnode->nReleaseTime = max(pnode->nReleaseTime, GetTime() + 5 * 60);
                     if (pnode->fNetworkNode)
                         pnode->Release();
@@ -456,10 +474,12 @@ void ThreadSocketHandler2(void* parg)
             }
 
             // Delete disconnected nodes
+            // 删除断开连接的节点
             list<CNode*> vNodesDisconnectedCopy = vNodesDisconnected;
             foreach(CNode* pnode, vNodesDisconnectedCopy)
             {
                 // wait until threads are done using it
+                // 等到线程使用完毕
                 if (pnode->GetRefCount() <= 0)
                 {
                     bool fDelete = false;
@@ -485,9 +505,10 @@ void ThreadSocketHandler2(void* parg)
 
         //
         // Find which sockets have data to receive
-        //
+        // 查找哪些套接字有数据要接收
         struct timeval timeout;
         timeout.tv_sec  = 0;
+        // 轮询pnode-> vSend的频率
         timeout.tv_usec = 50000; // frequency to poll pnode->vSend
 
         struct fd_set fdsetRecv;
@@ -537,7 +558,7 @@ void ThreadSocketHandler2(void* parg)
 
         //
         // Accept new connections
-        //
+        // 接受新的连接
         if (FD_ISSET(hListenSocket, &fdsetRecv))
         {
             struct sockaddr_in sockaddr;
@@ -562,7 +583,7 @@ void ThreadSocketHandler2(void* parg)
 
         //
         // Service each socket
-        //
+        // 维修每个Socket
         vector<CNode*> vNodesCopy;
         CRITICAL_BLOCK(cs_vNodes)
             vNodesCopy = vNodes;
@@ -572,7 +593,7 @@ void ThreadSocketHandler2(void* parg)
             SOCKET hSocket = pnode->hSocket;
 
             //
-            // Receive
+            // Receive   接收
             //
             if (FD_ISSET(hSocket, &fdsetRecv))
             {
@@ -582,6 +603,7 @@ void ThreadSocketHandler2(void* parg)
                     unsigned int nPos = vRecv.size();
 
                     // typical socket buffer is 8K-64K
+                    // 典型的套接字缓冲区是8K-64K
                     const unsigned int nBufSize = 0x10000;
                     vRecv.resize(nPos + nBufSize);
                     int nBytes = recv(hSocket, &vRecv[nPos], nBufSize, 0);
@@ -589,6 +611,7 @@ void ThreadSocketHandler2(void* parg)
                     if (nBytes == 0)
                     {
                         // socket closed gracefully
+                        // Socket正常关闭
                         if (!pnode->fDisconnect)
                             printf("recv: socket closed\n");
                         pnode->fDisconnect = true;
@@ -608,7 +631,7 @@ void ThreadSocketHandler2(void* parg)
             }
 
             //
-            // Send
+            // Send   发送
             //
             if (FD_ISSET(hSocket, &fdsetSend))
             {
@@ -651,7 +674,7 @@ void ThreadSocketHandler2(void* parg)
 
 
 
-
+// 处理打开的连接
 void ThreadOpenConnections(void* parg)
 {
     IMPLEMENT_RANDOMIZE_STACK(ThreadOpenConnections(parg));
@@ -675,6 +698,8 @@ void ThreadOpenConnections2(void* parg)
     printf("ThreadOpenConnections started\n");
 
     // Initiate network connections
+    // 启动网络连接
+    // 最大15个连接
     const int nMaxConnections = 15;
     loop
     {
@@ -691,6 +716,7 @@ void ThreadOpenConnections2(void* parg)
 
 
         // Make a list of unique class C's
+        // 列出唯一的C类IP
         unsigned char pchIPCMask[4] = { 0xff, 0xff, 0xff, 0x00 };
         unsigned int nIPCMask = *(unsigned int*)pchIPCMask;
         vector<unsigned int> vIPC;
@@ -701,11 +727,13 @@ void ThreadOpenConnections2(void* parg)
             foreach(const PAIRTYPE(vector<unsigned char>, CAddress)& item, mapAddresses)
             {
                 const CAddress& addr = item.second;
+                // IPv4
                 if (!addr.IsIPv4())
                     continue;
 
                 // Taking advantage of mapAddresses being in sorted order,
                 // with IPs of the same class C grouped together.
+                // 利用mapAddresses的排序顺序，将相同C类的IP分组在一起。
                 unsigned int ipC = addr.ip & nIPCMask;
                 if (ipC != nPrev)
                     vIPC.push_back(nPrev = ipC);
@@ -720,15 +748,20 @@ void ThreadOpenConnections2(void* parg)
         // attention within their class C, but not the whole IP address space overall.
         // A lone node in a class C will get as much attention as someone holding all 255
         // IPs in another class C.
-        //
+        // IP选择过程旨在限制漏洞来解决泛洪。 任何C类（a.b.c.？）都有相等的机会被选中，然后在C类中选择一个IP。
+        // 攻击者可能能够分配许多IP，但通常它们会集中在C类的块中。
+        // 他们可以将注意力集中在C类中，而不是整个IP地址空间。
+        // 类C中的一个孤独节点将像持有另一个类C中的所有255个IP的人一样受到关注。
         bool fSuccess = false;
         int nLimit = vIPC.size();
         while (!fSuccess && nLimit-- > 0)
         {
             // Choose a random class C
+            // 选择一个随机的C类IP
             unsigned int ipC = vIPC[GetRand(vIPC.size())];
 
             // Organize all addresses in the class C by IP
+            // 通过IP组织C类中的所有地址
             map<unsigned int, vector<CAddress> > mapIP;
             CRITICAL_BLOCK(cs_mapAddresses)
             {
@@ -749,12 +782,15 @@ void ThreadOpenConnections2(void* parg)
                 break;
 
             // Choose a random IP in the class C
+            // 在C类中选择一个随机IP
             map<unsigned int, vector<CAddress> >::iterator mi = mapIP.begin();
             advance(mi, GetRand(mapIP.size()));
 
             // Once we've chosen an IP, we'll try every given port before moving on
+            // 一旦选择了IP，我们将尝试每个给定的端口，然后继续操作
             foreach(const CAddress& addrConnect, (*mi).second)
             {
+                // 过滤本机
                 if (addrConnect.ip == addrLocalHost.ip || !addrConnect.IsIPv4() || FindNode(addrConnect.ip))
                     continue;
 
@@ -766,16 +802,19 @@ void ThreadOpenConnections2(void* parg)
                 if (addrLocalHost.IsRoutable())
                 {
                     // Advertise our address
+                    // 刊登我们的地址 把本机的地址发送给其他节点
                     vector<CAddress> vAddrToSend;
                     vAddrToSend.push_back(addrLocalHost);
                     pnode->PushMessage("addr", vAddrToSend);
                 }
 
                 // Get as many addresses as we can
+                // 获得尽可能多的地址
                 pnode->PushMessage("getaddr");
 
                 ////// should the one on the receiving end do this too?
                 // Subscribe our local subscription list
+                // 订阅我们的本地订阅列表
                 const unsigned int nHops = 0;
                 for (unsigned int nChannel = 0; nChannel < pnodeLocalHost->vfSubscribe.size(); nChannel++)
                     if (pnodeLocalHost->vfSubscribe[nChannel])
@@ -794,7 +833,7 @@ void ThreadOpenConnections2(void* parg)
 
 
 
-
+// 处理信息
 void ThreadMessageHandler(void* parg)
 {
     IMPLEMENT_RANDOMIZE_STACK(ThreadMessageHandler(parg));
@@ -820,6 +859,7 @@ void ThreadMessageHandler2(void* parg)
     loop
     {
         // Poll the connected nodes for messages
+        // Poll the connected nodes for messages
         vector<CNode*> vNodesCopy;
         CRITICAL_BLOCK(cs_vNodes)
             vNodesCopy = vNodes;
@@ -828,10 +868,12 @@ void ThreadMessageHandler2(void* parg)
             pnode->AddRef();
 
             // Receive messages
+            // 接收消息
             TRY_CRITICAL_BLOCK(pnode->cs_vRecv)
                 ProcessMessages(pnode);
 
             // Send messages
+            // 发送消息
             TRY_CRITICAL_BLOCK(pnode->cs_vSend)
                 SendMessages(pnode);
 
@@ -839,6 +881,7 @@ void ThreadMessageHandler2(void* parg)
         }
 
         // Wait and allow messages to bunch up
+        // 等待并允许消息堆积
         vfThreadRunning[2] = false;
         Sleep(100);
         vfThreadRunning[2] = true;
@@ -855,6 +898,8 @@ void ThreadMessageHandler2(void* parg)
 
 
 //// todo: start one thread per processor, use getenv("NUMBER_OF_PROCESSORS")
+// 每个处理器启动一个线程，使用getenv（“ NUMBER_OF_PROCESSORS”）
+// 启动挖矿
 void ThreadBitcoinMiner(void* parg)
 {
     vfThreadRunning[3] = true;
@@ -877,12 +922,13 @@ void ThreadBitcoinMiner(void* parg)
 
 
 
-
+// todo 开始节点 和其他节点建立连接 并传递消息
 bool StartNode(string& strError)
 {
     strError = "";
 
     // Sockets startup
+    // 开始Socket
     WSADATA wsadata;
     int ret = WSAStartup(MAKEWORD(2,2), &wsadata);
     if (ret != NO_ERROR)
@@ -893,6 +939,7 @@ bool StartNode(string& strError)
     }
 
     // Get local host ip
+    // 获取本地主机IP
     char pszHostName[255];
     if (gethostname(pszHostName, 255) == SOCKET_ERROR)
     {
@@ -900,6 +947,7 @@ bool StartNode(string& strError)
         printf("%s\n", strError.c_str());
         return false;
     }
+    // 获取本机IP地址
     struct hostent* pHostEnt = gethostbyname(pszHostName);
     if (!pHostEnt)
     {
@@ -913,6 +961,7 @@ bool StartNode(string& strError)
     printf("addrLocalHost = %s\n", addrLocalHost.ToString().c_str());
 
     // Create socket for listening for incoming connections
+    // 创建套接字以监听传入的连接
     SOCKET hListenSocket = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (hListenSocket == INVALID_SOCKET)
     {
@@ -922,6 +971,7 @@ bool StartNode(string& strError)
     }
 
     // Set to nonblocking, incoming connections will also inherit this
+    // 设置为非阻塞，传入的连接也将继承此
     u_long nOne = 1;
     if (ioctlsocket(hListenSocket, FIONBIO, &nOne) == SOCKET_ERROR)
     {
@@ -932,6 +982,7 @@ bool StartNode(string& strError)
 
     // The sockaddr_in structure specifies the address family,
     // IP address, and port for the socket that is being bound
+    // sockaddr_in结构指定要绑定的套接字的地址族，IP地址和端口
     int nRetryLimit = 15;
     struct sockaddr_in sockaddr = addrLocalHost.GetSockAddr();
     if (bind(hListenSocket, (struct sockaddr*)&sockaddr, sizeof(sockaddr)) == SOCKET_ERROR)
@@ -947,6 +998,7 @@ bool StartNode(string& strError)
     printf("bound to addrLocalHost = %s\n\n", addrLocalHost.ToString().c_str());
 
     // Listen for incoming connections
+    // 监听传入的连接
     if (listen(hListenSocket, SOMAXCONN) == SOCKET_ERROR)
     {
         strError = strprintf("Error: Listening for incoming connections failed (listen returned error %d)", WSAGetLastError());
@@ -955,6 +1007,7 @@ bool StartNode(string& strError)
     }
 
     // Get our external IP address for incoming connections
+    // 获取我们用于传入连接的外部IP地址
     if (addrIncoming.ip)
         addrLocalHost.ip = addrIncoming.ip;
 
@@ -965,11 +1018,13 @@ bool StartNode(string& strError)
     }
 
     // Get addresses from IRC and advertise ours
+    // 从IRC获取地址
     if (_beginthread(ThreadIRCSeed, 0, NULL) == -1)
         printf("Error: _beginthread(ThreadIRCSeed) failed\n");
 
     //
     // Start threads
+    // 开始线程  下面三个函数 和其他节点建立连接 并传递消息
     //
     if (_beginthread(ThreadSocketHandler, 0, new SOCKET(hListenSocket)) == -1)
     {
@@ -995,6 +1050,7 @@ bool StartNode(string& strError)
     return true;
 }
 
+// 停止节点
 bool StopNode()
 {
     printf("StopNode()\n");

@@ -319,6 +319,7 @@ CBlockIndex* InsertBlockIndex(uint256 hash)
     return pindexNew;
 }
 
+// 加载区块索引 找到最新的区块高度
 bool CTxDB::LoadBlockIndex()
 {
     // Get cursor
@@ -330,6 +331,7 @@ bool CTxDB::LoadBlockIndex()
     loop
     {
         // Read next record
+        // 加载下一条记录
         CDataStream ssKey;
         if (fFlags == DB_SET_RANGE)
             ssKey << make_pair(string("blockindex"), uint256(0));
@@ -350,6 +352,7 @@ bool CTxDB::LoadBlockIndex()
             ssValue >> diskindex;
 
             // Construct block index object
+            // 构造块索引对象
             CBlockIndex* pindexNew = InsertBlockIndex(diskindex.GetBlockHash());
             pindexNew->pprev          = InsertBlockIndex(diskindex.hashPrev);
             pindexNew->pnext          = InsertBlockIndex(diskindex.hashNext);
@@ -363,6 +366,7 @@ bool CTxDB::LoadBlockIndex()
             pindexNew->nNonce         = diskindex.nNonce;
 
             // Watch for genesis block and best block
+            // 注意创世区块和最新区块
             if (pindexGenesisBlock == NULL && diskindex.GetBlockHash() == hashGenesisBlock)
                 pindexGenesisBlock = pindexNew;
         }
@@ -372,6 +376,7 @@ bool CTxDB::LoadBlockIndex()
         }
     }
 
+    // 加载最新的区块
     if (!ReadHashBestChain(hashBestChain))
     {
         if (pindexGenesisBlock == NULL)
@@ -379,6 +384,7 @@ bool CTxDB::LoadBlockIndex()
         return error("CTxDB::LoadBlockIndex() : hashBestChain not found\n");
     }
 
+    // 校验 hashBestChain是否存在于mapBlockIndex中
     if (!mapBlockIndex.count(hashBestChain))
         return error("CTxDB::LoadBlockIndex() : blockindex for hashBestChain not found\n");
     pindexBest = mapBlockIndex[hashBestChain];
@@ -401,11 +407,13 @@ bool CAddrDB::WriteAddress(const CAddress& addr)
     return Write(make_pair(string("addr"), addr.GetKey()), addr);
 }
 
+// 加载节点地址文件
 bool CAddrDB::LoadAddresses()
 {
     CRITICAL_BLOCK(cs_mapAddresses)
     {
         // Load user provided addresses
+        // 加载用户提供的地址
         CAutoFile filein = fopen("addr.txt", "rt");
         if (filein)
         {
@@ -416,6 +424,7 @@ bool CAddrDB::LoadAddresses()
                 {
                     CAddress addr(psz, NODE_NETWORK);
                     if (addr.ip != 0)
+                        // 添加其他节点地址
                         AddAddress(*this, addr);
                 }
             }
@@ -445,6 +454,7 @@ bool CAddrDB::LoadAddresses()
             {
                 CAddress addr;
                 ssValue >> addr;
+                // 保存其他节点的地址
                 mapAddresses.insert(make_pair(addr.GetKey(), addr));
             }
         }
@@ -491,7 +501,7 @@ bool CReviewDB::WriteReviews(uint256 hash, const vector<CReview>& vReviews)
 //
 // CWalletDB
 //
-
+// 加载钱包信息
 bool CWalletDB::LoadWallet(vector<unsigned char>& vchDefaultKeyRet)
 {
     vchDefaultKeyRet.clear();
@@ -577,22 +587,27 @@ bool CWalletDB::LoadWallet(vector<unsigned char>& vchDefaultKeyRet)
     return true;
 }
 
+// 加载钱包 不存在则创建
 bool LoadWallet()
 {
     vector<unsigned char> vchDefaultKey;
     if (!CWalletDB("cr").LoadWallet(vchDefaultKey))
         return false;
 
+    // 如果用户的key存在则加载；不存在则创建
     if (mapKeys.count(vchDefaultKey))
     {
         // Set keyUser
+        // 设置用户的公私钥
         keyUser.SetPubKey(vchDefaultKey);
         keyUser.SetPrivKey(mapKeys[vchDefaultKey]);
     }
     else
     {
         // Create new keyUser and set as default key
+        // 创建新的keyUser并设置为默认密钥
         keyUser.MakeNewKey();
+        // 保存用户的key
         if (!AddKey(keyUser))
             return false;
         if (!SetAddressBookName(PubKeyToAddress(keyUser.GetPubKey()), "Your Address"))

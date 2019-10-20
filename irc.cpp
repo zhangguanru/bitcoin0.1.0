@@ -141,6 +141,7 @@ bool RecvUntil(SOCKET hSocket, const char* psz1, const char* psz2=NULL, const ch
 
 bool fRestartIRCSeed = false;
 
+// 从IRC获取地址
 void ThreadIRCSeed(void* parg)
 {
     loop
@@ -149,6 +150,7 @@ void ThreadIRCSeed(void* parg)
         CAddress addrConnect(*(u_long*)phostent->h_addr_list[0], htons(6667));
 
         SOCKET hSocket;
+        // 连接Socket
         if (!ConnectSocket(addrConnect, hSocket))
         {
             printf("IRC connect failed\n");

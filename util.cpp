@@ -215,6 +215,7 @@ string FormatMoney(int64 n, bool fPlus)
     return str;
 }
 
+// 解析转账金额
 bool ParseMoney(const char* pszIn, int64& nRet)
 {
     string strWhole;

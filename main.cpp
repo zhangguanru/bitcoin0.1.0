@@ -61,7 +61,7 @@ CAddress addrIncoming;
 //
 // mapKeys
 //
-
+// 保存key pubKey:privKey   address:pubKey
 bool AddKey(const CKey& key)
 {
     CRITICAL_BLOCK(cs_mapKeys)
@@ -88,13 +88,14 @@ vector<unsigned char> GenerateNewKey()
 //
 // mapWallet
 //
-
+// 将未花费添加到钱包
 bool AddToWallet(const CWalletTx& wtxIn)
 {
     uint256 hash = wtxIn.GetHash();
     CRITICAL_BLOCK(cs_mapWallet)
     {
         // Inserts only if not already there, returns tx inserted or tx found
+        // 不过不存在则插入，返回插入的tx或找到的tx
         pair<map<uint256, CWalletTx>::iterator, bool> ret = mapWallet.insert(make_pair(hash, wtxIn));
         CWalletTx& wtx = (*ret.first).second;
         bool fInsertedNew = ret.second;
@@ -138,10 +139,12 @@ bool AddToWallet(const CWalletTx& wtxIn)
             return false;
 
         // Notify UI
+        // 通知
         vWalletUpdated.push_back(make_pair(hash, fInsertedNew));
     }
 
     // Refresh UI
+    // 刷新桌面显示
     MainFrameRepaint();
     return true;
 }
@@ -402,13 +405,14 @@ void CWalletTx::AddSupportingTransactions(CTxDB& txdb)
 
 
 
-
+// 接收交易
 bool CTransaction::AcceptTransaction(CTxDB& txdb, bool fCheckInputs, bool* pfMissingInputs)
 {
     if (pfMissingInputs)
         *pfMissingInputs = false;
 
     // Coinbase is only valid in a block, not as a loose transaction
+    // Coinbase在接收区块的时候校验
     if (IsCoinBase())
         return error("AcceptTransaction() : coinbase as individual tx");
 
@@ -416,6 +420,7 @@ bool CTransaction::AcceptTransaction(CTxDB& txdb, bool fCheckInputs, bool* pfMis
         return error("AcceptTransaction() : CheckTransaction failed");
 
     // Do we already have it?
+    // 是否已经处理过这笔交易
     uint256 hash = GetHash();
     CRITICAL_BLOCK(cs_mapTransactions)
         if (mapTransactions.count(hash))
@@ -425,6 +430,7 @@ bool CTransaction::AcceptTransaction(CTxDB& txdb, bool fCheckInputs, bool* pfMis
             return false;
 
     // Check for conflicts with in-memory transactions
+    // 检查与内存中事务的冲突
     CTransaction* ptxOld = NULL;
     for (int i = 0; i < vin.size(); i++)
     {
@@ -432,6 +438,7 @@ bool CTransaction::AcceptTransaction(CTxDB& txdb, bool fCheckInputs, bool* pfMis
         if (mapNextTx.count(outpoint))
         {
             // Allow replacing with a newer version of the same transaction
+            // 允许替换为同一交易的较新版本
             if (i != 0)
                 return false;
             ptxOld = mapNextTx[outpoint].ptx;
@@ -448,6 +455,7 @@ bool CTransaction::AcceptTransaction(CTxDB& txdb, bool fCheckInputs, bool* pfMis
     }
 
     // Check against previous transactions
+    // 再次检查交易输入
     map<uint256, CTxIndex> mapUnused;
     int64 nFees = 0;
     if (fCheckInputs && !ConnectInputs(txdb, mapUnused, CDiskTxPos(1,1,1), 0, nFees, false, false))
@@ -458,6 +466,7 @@ bool CTransaction::AcceptTransaction(CTxDB& txdb, bool fCheckInputs, bool* pfMis
     }
 
     // Store transaction in memory
+    // 将交易存储在内存池中
     CRITICAL_BLOCK(cs_mapTransactions)
     {
         if (ptxOld)
@@ -470,6 +479,7 @@ bool CTransaction::AcceptTransaction(CTxDB& txdb, bool fCheckInputs, bool* pfMis
 
     ///// are we sure this is ok when loading transactions or restoring block txes
     // If updated, erase old tx from wallet
+    // 如果已更新，请从钱包中删除旧的TX
     if (ptxOld)
         EraseFromWallet(ptxOld->GetHash());
 
@@ -477,11 +487,12 @@ bool CTransaction::AcceptTransaction(CTxDB& txdb, bool fCheckInputs, bool* pfMis
     return true;
 }
 
-
+// 将交易添加到内存池 不做任何检查
 bool CTransaction::AddToMemoryPool()
 {
     // Add to memory pool without checking anything.  Don't call this directly,
     // call AcceptTransaction to properly check the transaction first.
+    // 添加到内存池而不检查任何内容。 不要直接调用此方法，请先调用AcceptTransaction以正确检查事务。
     CRITICAL_BLOCK(cs_mapTransactions)
     {
         uint256 hash = GetHash();
@@ -493,7 +504,7 @@ bool CTransaction::AddToMemoryPool()
     return true;
 }
 
-
+// 从内存池中删除事务
 bool CTransaction::RemoveFromMemoryPool()
 {
     // Remove transaction from memory pool
@@ -580,9 +591,11 @@ bool CWalletTx::AcceptWalletTransaction(CTxDB& txdb, bool fCheckInputs)
     return true;
 }
 
+//  将尚未存在的钱包交易添加到mapTransactions
 void ReacceptWalletTransactions()
 {
     // Reaccept any txes of ours that aren't already in a block
+    // 接受我们尚未存在的任何TX
     CTxDB txdb("r");
     CRITICAL_BLOCK(cs_mapWallet)
     {
@@ -1755,7 +1768,7 @@ bool ProcessMessages(CNode* pfrom)
 
 
 
-
+// 处理收到的信息
 bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 {
     static map<unsigned int, vector<unsigned char> > mapReuseKey;
@@ -2121,7 +2134,7 @@ bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
 
 
 
-
+// 发送信息给其他节点
 bool SendMessages(CNode* pto)
 {
     CheckForShutdown(2);
@@ -2508,7 +2521,13 @@ int64 GetBalance()
 }
 
 
-
+/**
+ *  选择合适的未花费
+ *
+ * @param nTargetValue  金额
+ * @param setCoinsRet   保存可以使用的未花费
+ * @return
+ */
 bool SelectCoins(int64 nTargetValue, set<CWalletTx*>& setCoinsRet)
 {
     setCoinsRet.clear();
@@ -2612,16 +2631,25 @@ bool SelectCoins(int64 nTargetValue, set<CWalletTx*>& setCoinsRet)
 
 
 
-
+/**
+ * 创建交易
+ * @param scriptPubKey   锁定脚本
+ * @param nValue  金额
+ * @param wtxNew  from+to
+ * @param nFeeRequiredRet
+ * @return
+ */
 bool CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, int64& nFeeRequiredRet)
 {
     nFeeRequiredRet = 0;
     CRITICAL_BLOCK(cs_main)
     {
         // txdb must be opened before the mapWallet lock
+        // 必须在mapWallet锁定之前打开txdb
         CTxDB txdb("r");
         CRITICAL_BLOCK(cs_mapWallet)
         {
+            // 交易手续费
             int64 nFee = nTransactionFee;
             loop
             {
@@ -2633,6 +2661,7 @@ bool CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, in
                 nValue += nFee;
 
                 // Choose coins to use
+                // 选择可以使用的未花费
                 set<CWalletTx*> setCoins;
                 if (!SelectCoins(nValue, setCoins))
                     return false;
@@ -2641,9 +2670,11 @@ bool CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, in
                     nValueIn += pcoin->GetCredit();
 
                 // Fill vout[0] to the payee
+                // 填充输出
                 wtxNew.vout.push_back(CTxOut(nValueOut, scriptPubKey));
 
                 // Fill vout[1] back to self with any change
+                // 填充输出 找零地址
                 if (nValueIn > nValue)
                 {
                     // Use the same key as one of the coins
@@ -2657,18 +2688,21 @@ bool CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, in
                         return false;
 
                     // Fill vout[1] to ourself
+                    // 找零地址
                     CScript scriptPubKey;
                     scriptPubKey << vchPubKey << OP_CHECKSIG;
                     wtxNew.vout.push_back(CTxOut(nValueIn - nValue, scriptPubKey));
                 }
 
                 // Fill vin
+                // 填充输入
                 foreach(CWalletTx* pcoin, setCoins)
                     for (int nOut = 0; nOut < pcoin->vout.size(); nOut++)
                         if (pcoin->vout[nOut].IsMine())
                             wtxNew.vin.push_back(CTxIn(pcoin->GetHash(), nOut));
 
                 // Sign
+                // 签名每一个输入
                 int nIn = 0;
                 foreach(CWalletTx* pcoin, setCoins)
                     for (int nOut = 0; nOut < pcoin->vout.size(); nOut++)
@@ -2676,6 +2710,7 @@ bool CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, in
                             SignSignature(*pcoin, wtxNew, nIn++);
 
                 // Check that enough fee is included
+                // 检查是否包含足够的手续费
                 if (nFee < wtxNew.GetMinFee(true))
                 {
                     nFee = nFeeRequiredRet = wtxNew.GetMinFee(true);
@@ -2683,6 +2718,7 @@ bool CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, in
                 }
 
                 // Fill vtxPrev by copying from previous transactions vtxPrev
+                // 通过从以前的交易中复制vtxPrev来填充vtxPrev
                 wtxNew.AddSupportingTransactions(txdb);
                 wtxNew.fTimeReceivedIsTxTime = true;
 
@@ -2694,6 +2730,8 @@ bool CreateTransaction(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew, in
 }
 
 // Call after CreateTransaction unless you want to abort
+// 在CreateTransaction之后调用，除非您想中止
+// 将交易输入标记为已花费
 bool CommitTransactionSpent(const CWalletTx& wtxNew)
 {
     CRITICAL_BLOCK(cs_main)
@@ -2704,9 +2742,11 @@ bool CommitTransactionSpent(const CWalletTx& wtxNew)
 
         // Add tx to wallet, because if it has change it's also ours,
         // otherwise just for transaction history.
+        // 将tx添加到钱包，因为如果有更改，它也是我们的，否则仅用于交易历史记录。
         AddToWallet(wtxNew);
 
         // Mark old coins as spent
+        // 将旧的未花费标记为已花费
         set<CWalletTx*> setCoins;
         foreach(const CTxIn& txin, wtxNew.vin)
             setCoins.insert(&mapWallet[txin.prevout.hash]);
@@ -2723,12 +2763,13 @@ bool CommitTransactionSpent(const CWalletTx& wtxNew)
 
 
 
-
+// 转账 发送
 bool SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew)
 {
     CRITICAL_BLOCK(cs_main)
     {
         int64 nFeeRequired;
+        // 创建交易
         if (!CreateTransaction(scriptPubKey, nValue, wtxNew, nFeeRequired))
         {
             string strError;
@@ -2739,6 +2780,7 @@ bool SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew)
             wxMessageBox(strError, "Sending...");
             return error("SendMoney() : %s\n", strError.c_str());
         }
+        // 将交易输入标记为已花费
         if (!CommitTransactionSpent(wtxNew))
         {
             wxMessageBox("Error finalizing transaction", "Sending...");
@@ -2748,6 +2790,7 @@ bool SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew)
         printf("SendMoney: %s\n", wtxNew.GetHash().ToString().substr(0,6).c_str());
 
         // Broadcast
+        // 广播交易
         if (!wtxNew.AcceptTransaction())
         {
             // This must not fail. The transaction has already been signed and recorded.

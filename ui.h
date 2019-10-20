@@ -31,7 +31,7 @@ extern void MainFrameRepaint();
 
 
 
-
+// 可视化显示 桌面显示 不做分析
 class CMainFrame : public CMainFrameBase
 {
 protected:
