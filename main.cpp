@@ -95,7 +95,7 @@ bool AddToWallet(const CWalletTx& wtxIn)
     CRITICAL_BLOCK(cs_mapWallet)
     {
         // Inserts only if not already there, returns tx inserted or tx found
-        // 不过不存在则插入，返回插入的tx或找到的tx
+        // 不存在则插入，返回插入的tx或找到的tx
         pair<map<uint256, CWalletTx>::iterator, bool> ret = mapWallet.insert(make_pair(hash, wtxIn));
         CWalletTx& wtx = (*ret.first).second;
         bool fInsertedNew = ret.second;
@@ -149,6 +149,7 @@ bool AddToWallet(const CWalletTx& wtxIn)
     return true;
 }
 
+// 将coinbase交易添加到钱包
 bool AddToWalletIfMine(const CTransaction& tx, const CBlock* pblock)
 {
     if (tx.IsMine() || mapWallet.count(tx.GetHash()))
@@ -162,6 +163,7 @@ bool AddToWalletIfMine(const CTransaction& tx, const CBlock* pblock)
     return true;
 }
 
+// 从钱包移除
 bool EraseFromWallet(uint256 hash)
 {
     CRITICAL_BLOCK(cs_mapWallet)
@@ -183,7 +185,7 @@ bool EraseFromWallet(uint256 hash)
 //////////////////////////////////////////////////////////////////////////////
 //
 // mapOrphanTransactions
-//
+// 添加孤儿交易
 
 void AddOrphanTx(const CDataStream& vMsg)
 {
@@ -197,6 +199,7 @@ void AddOrphanTx(const CDataStream& vMsg)
         mapOrphanTransactionsByPrev.insert(make_pair(txin.prevout.hash, pvMsg));
 }
 
+// 移除孤儿交易
 void EraseOrphanTx(uint256 hash)
 {
     if (!mapOrphanTransactions.count(hash))
@@ -522,7 +525,7 @@ bool CTransaction::RemoveFromMemoryPool()
 
 
 
-
+// 得到MerkleTree深度
 int CMerkleTx::GetDepthInMainChain() const
 {
     if (hashBlock == 0 || nIndex == -1)
@@ -537,6 +540,7 @@ int CMerkleTx::GetDepthInMainChain() const
         return 0;
 
     // Make sure the merkle branch connects to this block
+    // 确保merkle分支连接到此块
     if (!fMerkleVerified)
     {
         if (CBlock::CheckMerkleBranch(GetHash(), vMerkleBranch, nIndex) != pindex->hashMerkleRoot)
@@ -571,7 +575,7 @@ bool CMerkleTx::AcceptTransaction(CTxDB& txdb, bool fCheckInputs)
 }
 
 
-
+// 是否接受交易
 bool CWalletTx::AcceptWalletTransaction(CTxDB& txdb, bool fCheckInputs)
 {
     CRITICAL_BLOCK(cs_mapTransactions)
@@ -608,13 +612,14 @@ void ReacceptWalletTransactions()
     }
 }
 
-
+// 广播钱包里的交易
 void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
 {
     foreach(const CMerkleTx& tx, vtxPrev)
     {
         if (!tx.IsCoinBase())
         {
+            // 非coinbase交易 并且每包含在txdb中
             uint256 hash = tx.GetHash();
             if (!txdb.ContainsTx(hash))
                 RelayMessage(CInv(MSG_TX, hash), (CTransaction)tx);
@@ -631,19 +636,23 @@ void CWalletTx::RelayWalletTransaction(CTxDB& txdb)
     }
 }
 
+// 广播钱包交易
 void RelayWalletTransactions()
 {
     static int64 nLastTime;
+    // 1小时进行一次
     if (GetTime() - nLastTime < 10 * 60)
         return;
     nLastTime = GetTime();
 
     // Rebroadcast any of our txes that aren't in a block yet
+    // 转播尚未在区块中出现的tx
     printf("RelayWalletTransactions()\n");
     CTxDB txdb("r");
     CRITICAL_BLOCK(cs_mapWallet)
     {
         // Sort them in chronological order
+        // 按时间顺序对它们进行排序
         multimap<unsigned int, CWalletTx*> mapSorted;
         foreach(PAIRTYPE(const uint256, CWalletTx)& item, mapWallet)
         {
@@ -761,10 +770,11 @@ unsigned int GetNextWorkRequired(const CBlockIndex* pindexLast)
 
 
 
-
+// 断开输入
 bool CTransaction::DisconnectInputs(CTxDB& txdb)
 {
     // Relinquish previous transactions' spent pointers
+    // 放弃先前交易的已用指针
     if (!IsCoinBase())
     {
         foreach(const CTxIn& txin, vin)
@@ -934,12 +944,14 @@ bool CTransaction::ClientConnectInputs()
         return false;
 
     // Take over previous transactions' spent pointers
+    // 接管交易输入的指针
     CRITICAL_BLOCK(cs_mapTransactions)
     {
         int64 nValueIn = 0;
         for (int i = 0; i < vin.size(); i++)
         {
             // Get prev tx from single transactions in memory
+            // 从内存中的单个事务获取上交易输入
             COutPoint prevout = vin[i].prevout;
             if (!mapTransactions.count(prevout.hash))
                 return false;
@@ -976,12 +988,15 @@ bool CTransaction::ClientConnectInputs()
 bool CBlock::DisconnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 {
     // Disconnect in reverse order
+    // 以相反的顺序断开
     for (int i = vtx.size()-1; i >= 0; i--)
         if (!vtx[i].DisconnectInputs(txdb))
             return false;
 
     // Update block index on disk without changing it in memory.
     // The memory index structure will be changed after the db commits.
+    // 更新磁盘上的块索引，而不在内存中进行更改。
+    // 提交数据库后，将更改内存索引结构。
     if (pindex->pprev)
     {
         CDiskBlockIndex blockindexPrev(pindex->pprev);
@@ -1021,6 +1036,7 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
     }
 
     // Watch for transactions paying to me
+    // 监控支付给我的交易
     foreach(CTransaction& tx, vtx)
         AddToWalletIfMine(tx, this);
 
@@ -1028,12 +1044,13 @@ bool CBlock::ConnectBlock(CTxDB& txdb, CBlockIndex* pindex)
 }
 
 
-
+// 重组
 bool Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
 {
     printf("*** REORGANIZE ***\n");
 
     // Find the fork
+    // 查找分叉
     CBlockIndex* pfork = pindexBest;
     CBlockIndex* plonger = pindexNew;
     while (pfork != plonger)
@@ -1046,17 +1063,20 @@ bool Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
     }
 
     // List of what to disconnect
+    // 断开连接的列表
     vector<CBlockIndex*> vDisconnect;
     for (CBlockIndex* pindex = pindexBest; pindex != pfork; pindex = pindex->pprev)
         vDisconnect.push_back(pindex);
 
     // List of what to connect
+    //连接的列表
     vector<CBlockIndex*> vConnect;
     for (CBlockIndex* pindex = pindexNew; pindex != pfork; pindex = pindex->pprev)
         vConnect.push_back(pindex);
     reverse(vConnect.begin(), vConnect.end());
 
     // Disconnect shorter branch
+    // 断开较短的分支
     vector<CTransaction> vResurrect;
     foreach(CBlockIndex* pindex, vDisconnect)
     {
@@ -1067,12 +1087,14 @@ bool Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
             return error("Reorganize() : DisconnectBlock failed");
 
         // Queue memory transactions to resurrect
+        // 轮询需要恢复的交易
         foreach(const CTransaction& tx, block.vtx)
             if (!tx.IsCoinBase())
                 vResurrect.push_back(tx);
     }
 
     // Connect longer branch
+    // 连接最长的分支
     vector<CTransaction> vDelete;
     for (int i = 0; i < vConnect.size(); i++)
     {
@@ -1083,6 +1105,7 @@ bool Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         if (!block.ConnectBlock(txdb, pindex))
         {
             // Invalid block, delete the rest of this branch
+            // 无效的块，删除该分支的其余部分
             txdb.TxnAbort();
             for (int j = i; j < vConnect.size(); j++)
             {
@@ -1096,6 +1119,7 @@ bool Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         }
 
         // Queue memory transactions to delete
+        // 轮询需要删除的交易
         foreach(const CTransaction& tx, block.vtx)
             vDelete.push_back(tx);
     }
@@ -1103,38 +1127,45 @@ bool Reorganize(CTxDB& txdb, CBlockIndex* pindexNew)
         return error("Reorganize() : WriteHashBestChain failed");
 
     // Commit now because resurrecting could take some time
+    // 立即提交，因为恢复可能需要一些时间
     txdb.TxnCommit();
 
     // Disconnect shorter branch
+    // 断开短的分支
     foreach(CBlockIndex* pindex, vDisconnect)
         if (pindex->pprev)
             pindex->pprev->pnext = NULL;
 
     // Connect longer branch
+    // 连接长的分支
     foreach(CBlockIndex* pindex, vConnect)
         if (pindex->pprev)
             pindex->pprev->pnext = pindex;
 
     // Resurrect memory transactions that were in the disconnected branch
+    // 恢复断开连接分支中的内存交易
     foreach(CTransaction& tx, vResurrect)
         tx.AcceptTransaction(txdb, false);
 
     // Delete redundant memory transactions that are in the connected branch
+    // 删除连接分支中的冗余内存交易
     foreach(CTransaction& tx, vDelete)
         tx.RemoveFromMemoryPool();
 
     return true;
 }
 
-
+// 将新的区块信息写进BlockIndex
 bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
 {
     // Check for duplicate
+    // 检查是否重复
     uint256 hash = GetHash();
     if (mapBlockIndex.count(hash))
         return error("AddToBlockIndex() : %s already exists", hash.ToString().substr(0,14).c_str());
 
     // Construct new block index object
+    // 构造新的块索引对象
     CBlockIndex* pindexNew = new CBlockIndex(nFile, nBlockPos, *this);
     if (!pindexNew)
         return error("AddToBlockIndex() : new CBlockIndex failed");
@@ -1152,6 +1183,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
     txdb.WriteBlockIndex(CDiskBlockIndex(pindexNew));
 
     // New best
+    // 新的区块
     if (pindexNew->nHeight > nBestHeight)
     {
         if (pindexGenesisBlock == NULL && hash == hashGenesisBlock)
@@ -1162,6 +1194,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
         else if (hashPrevBlock == hashBestChain)
         {
             // Adding to current best branch
+            // 添加到当前的最佳分支
             if (!ConnectBlock(txdb, pindexNew) || !txdb.WriteHashBestChain(hash))
             {
                 txdb.TxnAbort();
@@ -1174,6 +1207,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
             pindexNew->pprev->pnext = pindexNew;
 
             // Delete redundant memory transactions
+            // 删除冗余内存交易
             foreach(CTransaction& tx, vtx)
                 tx.RemoveFromMemoryPool();
         }
@@ -1199,6 +1233,7 @@ bool CBlock::AddToBlockIndex(unsigned int nFile, unsigned int nBlockPos)
     txdb.Close();
 
     // Relay wallet transactions that haven't gotten in yet
+    // 广播本地钱包尚未包含在区块中的交易
     if (pindexNew == pindexBest)
         RelayWalletTransactions();
 
@@ -1499,6 +1534,7 @@ FILE* AppendBlockFile(unsigned int& nFileRet)
     }
 }
 
+// 加载区块索引
 bool LoadBlockIndex(bool fAllowNew)
 {
     //
@@ -1511,7 +1547,7 @@ bool LoadBlockIndex(bool fAllowNew)
 
     //
     // Init with genesis block
-    //
+    // 用创始块进行初始化
     if (mapBlockIndex.empty())
     {
         if (!fAllowNew)
@@ -1689,7 +1725,7 @@ bool AlreadyHave(CTxDB& txdb, const CInv& inv)
 
 
 
-
+// 处理从节点传来的消息
 bool ProcessMessages(CNode* pfrom)
 {
     CDataStream& vRecv = pfrom->vRecv;
@@ -1737,6 +1773,7 @@ bool ProcessMessages(CNode* pfrom)
         if (nMessageSize > vRecv.size())
         {
             // Rewind and wait for rest of message
+            // 倒带并等待消息的其余部分
             ///// need a mechanism to give up waiting for overlong message size error
             printf("MESSAGE-BREAK 2\n");
             vRecv.insert(vRecv.begin(), BEGIN(hdr), END(hdr));
@@ -1745,6 +1782,7 @@ bool ProcessMessages(CNode* pfrom)
         }
 
         // Copy message to its own buffer
+        // 将消息复制到其自己的缓冲区
         CDataStream vMsg(vRecv.begin(), vRecv.begin() + nMessageSize, vRecv.nType, vRecv.nVersion);
         vRecv.ignore(nMessageSize);
 
@@ -1754,6 +1792,7 @@ bool ProcessMessages(CNode* pfrom)
         {
             CheckForShutdown(2);
             CRITICAL_BLOCK(cs_main)
+            // 调用函数处理消息
                 fRet = ProcessMessage(pfrom, strCommand, vMsg);
             CheckForShutdown(2);
         }
@@ -1783,7 +1822,7 @@ bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     }
 
 
-
+    // version 命令
     if (strCommand == "version")
     {
         // Can only do this once
@@ -1809,6 +1848,7 @@ bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         AddTimeData(pfrom->addr.ip, nTime);
 
         // Ask the first connected node for block updates
+        // 向第一个连接的节点询问块更新
         static bool fAskedForBlocks;
         if (!fAskedForBlocks && !pfrom->fClient)
         {
@@ -1823,6 +1863,7 @@ bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
     else if (pfrom->nVersion == 0)
     {
         // Must have a version message before anything else
+        // 必须先有版本消息
         return false;
     }
 
@@ -1833,6 +1874,7 @@ bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         vRecv >> vAddr;
 
         // Store the new addresses
+        // 存储新地址
         CAddrDB addrdb;
         foreach(const CAddress& addr, vAddr)
         {
@@ -1841,6 +1883,7 @@ bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             if (AddAddress(addrdb, addr))
             {
                 // Put on lists to send to other nodes
+                // 放入列表以发送到其他节点
                 pfrom->setAddrKnown.insert(addr);
                 CRITICAL_BLOCK(cs_vNodes)
                     foreach(CNode* pnode, vNodes)
@@ -1888,6 +1931,7 @@ bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
             if (inv.type == MSG_BLOCK)
             {
                 // Send block from disk
+                // 从磁盘发送块
                 map<uint256, CBlockIndex*>::iterator mi = mapBlockIndex.find(inv.hash);
                 if (mi != mapBlockIndex.end())
                 {
@@ -1918,6 +1962,7 @@ bool ProcessMessage(CNode* pfrom, string strCommand, CDataStream& vRecv)
         vRecv >> locator >> hashStop;
 
         // Find the first block the caller has in the main chain
+        // 查找调用者在主链中拥有的第一个区块
         CBlockIndex* pindex = locator.GetBlockIndex();
 
         // Send the rest of the chain
@@ -2141,6 +2186,7 @@ bool SendMessages(CNode* pto)
     CRITICAL_BLOCK(cs_main)
     {
         // Don't send anything until we get their version message
+        // 在收到他们的版本消息之后才给他们发送东西
         if (pto->nVersion == 0)
             return true;
 
@@ -2497,7 +2543,7 @@ bool BitcoinMiner()
 // Actions
 //
 
-
+// 得到所有的可用花费
 int64 GetBalance()
 {
     int64 nStart, nEnd;

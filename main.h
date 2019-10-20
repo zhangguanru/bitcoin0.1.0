@@ -270,7 +270,7 @@ public:
 //
 // An output of a transaction.  It contains the public key that the next input
 // must be able to sign with to claim it.
-//
+// 交易的输出。 它包含下一个输入的公钥 必须能够签名才能声明它。
 class CTxOut
 {
 public:
@@ -442,14 +442,16 @@ public:
     bool CheckTransaction() const
     {
         // Basic checks that don't depend on any context
+        // 输入输出不能为空
         if (vin.empty() || vout.empty())
             return error("CTransaction::CheckTransaction() : vin or vout empty");
 
         // Check for negative values
+        // 交易输出金额不能为负
         foreach(const CTxOut& txout, vout)
             if (txout.nValue < 0)
                 return error("CTransaction::CheckTransaction() : txout.nValue negative");
-
+        // 如果是coinbase交易 检查脚本的大小
         if (IsCoinBase())
         {
             if (vin[0].scriptSig.size() < 2 || vin[0].scriptSig.size() > 100)

@@ -91,6 +91,7 @@ public:
             return string(pchCommand, pchCommand + COMMAND_SIZE);
     }
 
+    // 检查节点传的消息
     bool IsValid()
     {
         // Check start string
@@ -787,6 +788,7 @@ inline void RelayMessage<>(const CInv& inv, const CDataStream& ss)
     CRITICAL_BLOCK(cs_mapRelay)
     {
         // Expire old relay messages
+        // 使旧的广播交易过期
         while (!vRelayExpiration.empty() && vRelayExpiration.front().first < GetTime())
         {
             mapRelay.erase(vRelayExpiration.front().second);
@@ -794,6 +796,7 @@ inline void RelayMessage<>(const CInv& inv, const CDataStream& ss)
         }
 
         // Save original serialized message so newer versions are preserved
+        // 保存原始的序列化消息，以便保留较新的版本
         mapRelay[inv] = ss;
         vRelayExpiration.push_back(make_pair(GetTime() + 15 * 60, inv));
     }
