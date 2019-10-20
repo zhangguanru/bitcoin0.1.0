@@ -129,6 +129,7 @@ void CDB::Close()
     RandAddSeed();
 }
 
+// 将所有未使用的文件中的日志数据刷新为实际数据文件
 void DBFlush(bool fShutdown)
 {
     // Flush log data to the actual data file

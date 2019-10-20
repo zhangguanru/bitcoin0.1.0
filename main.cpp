@@ -1574,7 +1574,7 @@ bool LoadBlockIndex(bool fAllowNew)
 }
 
 
-
+// 打印区块树
 void PrintBlockTree()
 {
     // precompute tree structure
@@ -2794,6 +2794,7 @@ bool SendMoney(CScript scriptPubKey, int64 nValue, CWalletTx& wtxNew)
         if (!wtxNew.AcceptTransaction())
         {
             // This must not fail. The transaction has already been signed and recorded.
+            // 这一定不能失败。 交易已签名并记录。
             throw runtime_error("SendMoney() : wtxNew.AcceptTransaction() failed\n");
             wxMessageBox("Error: Transaction not valid", "Sending...");
             return error("SendMoney() : Error: Transaction not valid");

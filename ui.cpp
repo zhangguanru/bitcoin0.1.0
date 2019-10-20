@@ -340,6 +340,7 @@ CMainFrame::~CMainFrame()
     pframeMain = NULL;
 }
 
+// 关闭应用
 void Shutdown(void* parg)
 {
     static CCriticalSection cs_Shutdown;
@@ -349,6 +350,7 @@ void Shutdown(void* parg)
         nTransactionsUpdated++;
         DBFlush(false);
         StopNode();
+        // 刷新数据库
         DBFlush(true);
 
         printf("Bitcoin exiting\n");
@@ -2940,7 +2942,7 @@ bool CMyApp::OnInit2()
 
     //
     // Parameters
-    // 参数
+    // 解析输入参数
     wxImage::AddHandler(new wxPNGHandler);
     map<string, string> mapArgs = ParseParameters(argc, argv);
 

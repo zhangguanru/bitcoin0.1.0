@@ -1061,6 +1061,7 @@ bool StopNode()
     Sleep(50);
 
     // Sockets shutdown
+    // 关闭Socket
     WSACleanup();
     return true;
 }
